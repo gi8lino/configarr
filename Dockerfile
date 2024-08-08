@@ -12,4 +12,4 @@ RUN tinygo build -o configarr -opt=s -no-debug main.go
 
 FROM scratch
 COPY --from=builder /app/configarr .
-ENTRYPOINT ["configarr"]
+ENTRYPOINT ["/configarr"]
