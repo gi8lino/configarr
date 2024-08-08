@@ -22,7 +22,8 @@ initContainers:
       - name: RADARR__LAUNCHBROWSER
         value: LaunchBrowser=False
     args:
-      - --prefix RADARR__
+      - --prefix
+      - RADARR__
     volumeMounts:
       - name: config
         mountPath: /config
