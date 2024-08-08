@@ -118,14 +118,14 @@ func updateConfigWithEnv(environ []string, config *Config, prefix string) map[st
 		// Split the environment variable into key and value
 		parts := strings.SplitN(envVar[len(envPrefix):], "=", 2)
 		if len(parts) != 2 {
-			log.Printf("Invalid environment variable format: %s", envVar)
+			log.Printf("WARN: Invalid environment variable format: %s", envVar)
 			continue
 		}
 
 		// Extract the property key and its value from the environment variable
 		envKeyValue := strings.SplitN(parts[1], "=", 2)
 		if len(envKeyValue) != 2 {
-			log.Printf("Invalid key-value pair in environment variable: %s", envVar)
+			log.Printf("WARN: Invalid key-value pair in environment variable: %s", envVar)
 			continue
 		}
 
