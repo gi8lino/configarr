@@ -35,7 +35,7 @@ initContainers:
 
 ### Environment Variables
 
-Use environment variables prefixed with your specified prefix to update XML configurations following the format `<PREFIX>__<IDENTIFIER>=<PROPERTY>=<VALUE>`. The `IDENTIFIER` is only used for readability and can be any string. The `PROPERTY` and `VALUE` are the key and value of the property to be updated in the XML configuration file.
+Use environment variables prefixed with your specified prefix to update XML configurations following the format `<PREFIX><IDENTIFIER>=<PROPERTY>=<VALUE>`. The `IDENTIFIER` is only used for readability and can be any string. The `PROPERTY` and `VALUE` are the key and value of the property to be updated in the XML configuration file.
 
 For example:
 
