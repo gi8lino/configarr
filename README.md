@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/assets/configarr.svg" />
+  <img src=".github/assets/configarr.png" />
 </p>
 
 # ConfigArr
