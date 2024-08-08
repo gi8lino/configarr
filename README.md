@@ -1,3 +1,7 @@
+<p align="center">
+  <img src=".github/assets/configarr.svg" />
+</p>
+
 # ConfigArr
 
 `ConfigArr` is a lightweight application designed to manage and update XML configuration files based on environment variables for the `*arr` family (e.g., `Radarr`, `Sonarr`, `Lidarr`, `Prowlarr` ...).
