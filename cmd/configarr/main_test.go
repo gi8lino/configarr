@@ -173,6 +173,35 @@ func TestWriteConfigToFile(t *testing.T) {
 	})
 }
 
+// TestParseFlags tests the parsing of command-line flags.
+func TestParseFlags(t *testing.T) {
+	t.Run("Parse valid flags", func(t *testing.T) {
+		args := []string{"--config", "/path/to/config.xml", "--prefix", "PREFIX__", "--silent"}
+		expectedFlags := Flags{
+			ConfigFilePath: "/path/to/config.xml",
+			Prefix:         "PREFIX__",
+			Silent:         true,
+		}
+
+		flags, err := parseFlags(args)
+		if err != nil {
+			t.Fatalf("Unexpected error parsing flags: %v", err)
+		}
+
+		if flags != expectedFlags {
+			t.Fatalf("Expected flags %+v, got %+v", expectedFlags, flags)
+		}
+	})
+
+	t.Run("Error on invalid flags", func(t *testing.T) {
+		args := []string{"--invalid"}
+		_, err := parseFlags(args)
+		if err == nil {
+			t.Fatal("Expected error on invalid flags, but got none")
+		}
+	})
+}
+
 // TestRun tests the main functionality of the application, ensuring it updates
 // the configuration file based on environment variables.
 func TestRun(t *testing.T) {
@@ -216,6 +245,49 @@ func TestRun(t *testing.T) {
 </Config>`
 		if string(updatedContent) != expectedXML {
 			t.Fatalf("Expected XML %s, got %s", expectedXML, string(updatedContent))
+		}
+	})
+
+	t.Run("No updates when environment variables do not match", func(t *testing.T) {
+		// Set up temporary XML file
+		xmlContent := `<Config>
+  <LogLevel>info</LogLevel>
+  <Theme>dark</Theme>
+</Config>`
+		file, err := os.CreateTemp("", "config*.xml")
+		if err != nil {
+			t.Fatalf("Unexpected error creating temp file: %v", err)
+		}
+		defer os.Remove(file.Name())
+
+		if _, err := file.Write([]byte(xmlContent)); err != nil {
+			t.Fatalf("Unexpected error writing XML content to temp file: %v", err)
+		}
+
+		envVars := []string{
+			"OTHER__LEVEL=LogLevel=debug",
+		}
+
+		// Prepare arguments to simulate command-line input
+		args := []string{"cmd", "--config", file.Name(), "--prefix", "CONFIGARR__"}
+
+		err = run(envVars, args)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		// Read the file to ensure it remains unchanged
+		updatedContent, err := os.ReadFile(file.Name())
+		if err != nil {
+			t.Fatalf("Unexpected error reading file: %v", err)
+		}
+
+		expectedXML := `<Config>
+  <LogLevel>info</LogLevel>
+  <Theme>dark</Theme>
+</Config>`
+		if string(updatedContent) != expectedXML {
+			t.Fatalf("Expected no changes, but got different XML: %s", string(updatedContent))
 		}
 	})
 }

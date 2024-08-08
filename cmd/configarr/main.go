@@ -141,7 +141,7 @@ func writeConfigToFile(config *Config, xmlFile string) error {
 }
 
 // parseFlags parses the provided command-line flags and returns a Flags struct.
-func parseFlags(flags []string) Flags {
+func parseFlags(flags []string) (Flags, error) {
 	// Create a new flag set to avoid affecting the global command line flags
 	flagSet := pflag.NewFlagSet("configFlags", pflag.ContinueOnError)
 
@@ -149,22 +149,23 @@ func parseFlags(flags []string) Flags {
 	prefix := flagSet.String("prefix", "CONFIGARR__", "Prefix for environment variables")
 	silent := flagSet.Bool("silent", false, "Suppress output")
 
-	// Parse the provided arguments
 	if err := flagSet.Parse(flags); err != nil {
-		fmt.Println("Error parsing flags:", err)
-		os.Exit(1)
+		return Flags{}, fmt.Errorf("error parsing flags: %w", err)
 	}
 
 	return Flags{
 		ConfigFilePath: *configFilePath,
 		Prefix:         *prefix,
 		Silent:         *silent,
-	}
+	}, nil
 }
 
 // run performs the main logic of the application, handling XML configuration updates.
 func run(environ []string, args []string) error {
-	flags := parseFlags(args[1:]) // exclude the program name
+	flags, err := parseFlags(args[1:]) // exclude the program name
+	if err != nil {
+		return fmt.Errorf("error parsing flags: %w", err)
+	}
 
 	config, err := readAndParseXML(flags.ConfigFilePath)
 	if err != nil {
@@ -188,6 +189,7 @@ func run(environ []string, args []string) error {
 	if !flags.Silent {
 		fmt.Println("No updates made to the configuration.")
 	}
+
 	return nil
 }
 
