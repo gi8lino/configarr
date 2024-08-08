@@ -4,7 +4,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -26,9 +26,10 @@ type Config struct {
 
 // Flags represents the command-line flags used by the application.
 type Flags struct {
-	ConfigFilePath string
-	Prefix         string
-	Silent         bool
+	ConfigFilePath      string
+	IgnoreMissingConfig bool
+	Prefix              string
+	Debug               bool
 }
 
 // UnmarshalXML customizes the unmarshalling of the XML into the Config struct.
@@ -86,8 +87,8 @@ func (c *Config) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 
 // readAndParseXML reads and parses the XML file into a Config struct.
 func readAndParseXML(xmlFile string) (*Config, error) {
-	if _, err := os.Stat(xmlFile); err != nil {
-		return nil, fmt.Errorf("error accessing file %s: %w", xmlFile, err)
+	if _, err := os.Stat(xmlFile); os.IsNotExist(err) {
+		return nil, fmt.Errorf("file does not exist: %s", xmlFile)
 	}
 
 	file, err := os.ReadFile(xmlFile)
@@ -105,27 +106,26 @@ func readAndParseXML(xmlFile string) (*Config, error) {
 
 // updateConfigWithEnv updates the Config map with values from environment variables
 // that match the given prefix. Returns a map of changed properties.
-func updateConfigWithEnv(environ []string, config *Config, prefix string) map[string]string {
+func updateConfigWithEnv(environ []string, config *Config, prefix string, logger *slog.Logger) map[string]string {
 	changedProperties := make(map[string]string)
 	envPrefix := strings.ToUpper(prefix)
 
 	for _, envVar := range environ {
-		// Check if the environment variable starts with the prefix
-		if !strings.HasPrefix(envVar, envPrefix) {
+		if !strings.HasPrefix(envVar, envPrefix) { // Check if the environment variable starts with the prefix
 			continue
 		}
 
 		// Split the environment variable into key and value
 		parts := strings.SplitN(envVar[len(envPrefix):], "=", 2)
 		if len(parts) != 2 {
-			log.Printf("WARN: Invalid environment variable format: %s", envVar)
+			logger.Warn(fmt.Sprintf("Invalid environment variable format: %s", envVar))
 			continue
 		}
 
 		// Extract the property key and its value from the environment variable
 		envKeyValue := strings.SplitN(parts[1], "=", 2)
 		if len(envKeyValue) != 2 {
-			log.Printf("WARN: Invalid key-value pair in environment variable: %s", envVar)
+			logger.Warn(fmt.Sprintf("Invalid key-value pair in environment variable: %s", envVar))
 			continue
 		}
 
@@ -136,7 +136,12 @@ func updateConfigWithEnv(environ []string, config *Config, prefix string) map[st
 		if currentValue, exists := config.Properties[envKey]; exists && envValue != currentValue {
 			config.Properties[envKey] = envValue
 			changedProperties[envKey] = envValue
+			logger.Debug(fmt.Sprintf("Updated '%s' to '%s'", envKey, envValue))
 		}
+	}
+
+	if len(changedProperties) == 0 {
+		logger.Debug("No updates made to the configuration.")
 	}
 
 	return changedProperties
@@ -158,59 +163,60 @@ func writeConfigToFile(config *Config, xmlFile string) error {
 
 // parseFlags parses the provided command-line flags and returns a Flags struct.
 func parseFlags(flags []string) (Flags, error) {
-	// Create a new flag set to avoid affecting the global command line flags
-	flagSet := pflag.NewFlagSet("configFlags", pflag.ContinueOnError)
+	flagSet := pflag.NewFlagSet("configFlags", pflag.ContinueOnError) // Create a new flag set to avoid affecting the global command line flags
 
 	configFilePath := flagSet.String("config", DefaultConfigPath, "Path to the XML configuration file")
 	prefix := flagSet.String("prefix", DefaultPrefix, "Prefix for environment variables")
-	silent := flagSet.Bool("silent", false, "Suppress output")
+	debug := flagSet.Bool("debug", false, "Enable debug logging")
+	ignoreMissingConfig := flagSet.Bool("ignore-missing-config", false, "Ignore missing configuration file")
 
 	if err := flagSet.Parse(flags); err != nil {
 		return Flags{}, fmt.Errorf("error parsing flags: %w", err)
 	}
 
 	return Flags{
-		ConfigFilePath: *configFilePath,
-		Prefix:         *prefix,
-		Silent:         *silent,
+		ConfigFilePath:      *configFilePath,
+		IgnoreMissingConfig: *ignoreMissingConfig,
+		Prefix:              *prefix,
+		Debug:               *debug,
 	}, nil
 }
 
 // run performs the main logic of the application, handling XML configuration updates.
-func run(environ []string, args []string) error {
+func run(environ []string, args []string, output io.Writer) error {
 	flags, err := parseFlags(args[1:]) // exclude the program name
 	if err != nil {
 		return err
 	}
 
+	level := slog.LevelInfo
+	if flags.Debug {
+		level = slog.LevelDebug
+	}
+	logger := slog.New(slog.NewTextHandler(output, &slog.HandlerOptions{Level: level}))
+
+	// Attempt to read and parse the XML configuration file
 	config, err := readAndParseXML(flags.ConfigFilePath)
 	if err != nil {
+		if strings.Contains(err.Error(), "file does not exist") && flags.IgnoreMissingConfig {
+			logger.Debug("No configuration file found. Skipping update.")
+			return nil
+		}
 		return fmt.Errorf("error reading XML file: %w", err)
 	}
 
-	changedProperties := updateConfigWithEnv(environ, config, flags.Prefix)
-	if len(changedProperties) > 0 {
-		if !flags.Silent {
-			for key, value := range changedProperties {
-				log.Printf("Updated '%s' to '%s'\n", key, value)
-			}
-		}
+	updateConfigWithEnv(environ, config, flags.Prefix, logger)
 
-		if err := writeConfigToFile(config, flags.ConfigFilePath); err != nil {
-			return fmt.Errorf("error writing updated configuration to XML file: %w", err)
-		}
-		return nil
-	}
-
-	if !flags.Silent {
-		log.Println("No updates made to the configuration.")
+	if err := writeConfigToFile(config, flags.ConfigFilePath); err != nil {
+		return fmt.Errorf("error writing updated configuration to XML file: %w", err)
 	}
 
 	return nil
 }
 
 func main() {
-	if err := run(os.Environ(), os.Args); err != nil {
-		log.Fatalf("Error: %v", err)
+	if err := run(os.Environ(), os.Args, os.Stdout); err != nil {
+		fmt.Fprintf(os.Stderr, "%s\n", err)
+		os.Exit(1)
 	}
 }

@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"encoding/xml"
+	"log/slog"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -21,7 +23,7 @@ func TestConfig_UnmarshalXML(t *testing.T) {
 			t.Fatalf("Expected properties not set correctly: %v", config.Properties)
 		}
 
-		if config.Keys[0] != "LogLevel" || config.Keys[1] != "Theme" {
+		if len(config.Keys) != 2 || config.Keys[0] != "LogLevel" || config.Keys[1] != "Theme" {
 			t.Fatalf("Expected key order ['LogLevel', 'Theme'], got %v", config.Keys)
 		}
 	})
@@ -31,7 +33,7 @@ func TestConfig_UnmarshalXML(t *testing.T) {
 		var config Config
 		err := xml.Unmarshal([]byte(xmlData), &config)
 		if err == nil {
-			t.Fatal("Expected error, but got none")
+			t.Fatal("Expected error due to malformed XML, but got none")
 		}
 	})
 }
@@ -73,6 +75,7 @@ func TestReadAndParseXML(t *testing.T) {
 		if _, err := file.Write([]byte(content)); err != nil {
 			t.Fatalf("Unexpected error writing to temp file: %v", err)
 		}
+		file.Close()
 
 		config, err := readAndParseXML(file.Name())
 		if err != nil {
@@ -83,7 +86,7 @@ func TestReadAndParseXML(t *testing.T) {
 			t.Fatalf("Expected properties not set correctly: %v", config.Properties)
 		}
 
-		if config.Keys[0] != "LogLevel" || config.Keys[1] != "Theme" {
+		if len(config.Keys) != 2 || config.Keys[0] != "LogLevel" || config.Keys[1] != "Theme" {
 			t.Fatalf("Expected key order ['LogLevel', 'Theme'], got %v", config.Keys)
 		}
 	})
@@ -112,9 +115,16 @@ func TestUpdateConfigWithEnv(t *testing.T) {
 			Keys: []string{"LogLevel", "Theme"},
 		}
 
-		changed := updateConfigWithEnv(envVars, config, "CONFIGARR__")
+		var stdOut strings.Builder
+		logger := slog.New(slog.NewTextHandler(&stdOut, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+		changed := updateConfigWithEnv(envVars, config, "CONFIGARR__", logger)
 		if len(changed) != 2 || changed["LogLevel"] != "debug" || changed["Theme"] != "light" {
 			t.Fatalf("Expected changes not applied correctly: %v", changed)
+		}
+
+		if !strings.Contains(stdOut.String(), "Updated 'LogLevel' to 'debug'") {
+			t.Fatalf("Expected log entry for LogLevel change, got: %s", stdOut.String())
 		}
 	})
 
@@ -130,9 +140,16 @@ func TestUpdateConfigWithEnv(t *testing.T) {
 			Keys: []string{"LogLevel"},
 		}
 
-		changed := updateConfigWithEnv(envVars, config, "CONFIGARR__")
+		var stdOut strings.Builder
+		logger := slog.New(slog.NewTextHandler(&stdOut, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+		changed := updateConfigWithEnv(envVars, config, "CONFIGARR__", logger)
 		if len(changed) != 0 {
 			t.Fatalf("Expected no changes, but got: %v", changed)
+		}
+
+		if !strings.Contains(stdOut.String(), "No updates made to the configuration.") {
+			t.Fatalf("Expected log entry for no updates, got: %s", stdOut.String())
 		}
 	})
 }
@@ -176,11 +193,12 @@ func TestWriteConfigToFile(t *testing.T) {
 // TestParseFlags tests the parsing of command-line flags.
 func TestParseFlags(t *testing.T) {
 	t.Run("Parse valid flags", func(t *testing.T) {
-		args := []string{"--config", "/path/to/config.xml", "--prefix", "PREFIX__", "--silent"}
+		args := []string{"--config", "/path/to/config.xml", "--prefix", "PREFIX__", "--debug", "--ignore-missing-config"}
 		expectedFlags := Flags{
-			ConfigFilePath: "/path/to/config.xml",
-			Prefix:         "PREFIX__",
-			Silent:         true,
+			ConfigFilePath:      "/path/to/config.xml",
+			Prefix:              "PREFIX__",
+			Debug:               true,
+			IgnoreMissingConfig: true,
 		}
 
 		flags, err := parseFlags(args)
@@ -220,15 +238,17 @@ func TestRun(t *testing.T) {
 		if _, err := file.Write([]byte(xmlContent)); err != nil {
 			t.Fatalf("Unexpected error writing XML content to temp file: %v", err)
 		}
+		file.Close()
 
 		envVars := []string{
-			"CONFIGARR__LEVEL=LogLevel=debug",
+			"CONFIGARR__LOG=LogLevel=debug",
 		}
 
 		// Prepare arguments to simulate command-line input
-		args := []string{"cmd", "--config", file.Name(), "--prefix", "CONFIGARR__"}
+		args := []string{"cmd", "--config", file.Name(), "--prefix", "CONFIGARR__", "--debug"}
 
-		err = run(envVars, args)
+		var stdOut strings.Builder
+		err = run(envVars, args, &stdOut)
 		if err != nil {
 			t.Fatalf("Unexpected error: %v", err)
 		}
@@ -245,6 +265,10 @@ func TestRun(t *testing.T) {
 </Config>`
 		if string(updatedContent) != expectedXML {
 			t.Fatalf("Expected XML %s, got %s", expectedXML, string(updatedContent))
+		}
+
+		if !strings.Contains(stdOut.String(), "Updated 'LogLevel' to 'debug'") {
+			t.Fatalf("Expected log entry for LogLevel change, got: %s", stdOut.String())
 		}
 	})
 
@@ -263,15 +287,17 @@ func TestRun(t *testing.T) {
 		if _, err := file.Write([]byte(xmlContent)); err != nil {
 			t.Fatalf("Unexpected error writing XML content to temp file: %v", err)
 		}
+		file.Close()
 
 		envVars := []string{
 			"OTHER__LEVEL=LogLevel=debug",
 		}
 
 		// Prepare arguments to simulate command-line input
-		args := []string{"cmd", "--config", file.Name(), "--prefix", "CONFIGARR__"}
+		args := []string{"cmd", "--config", file.Name(), "--prefix", "CONFIGARR__", "--debug"}
 
-		err = run(envVars, args)
+		var stdOut strings.Builder
+		err = run(envVars, args, &stdOut)
 		if err != nil {
 			t.Fatalf("Unexpected error: %v", err)
 		}
@@ -288,6 +314,50 @@ func TestRun(t *testing.T) {
 </Config>`
 		if string(updatedContent) != expectedXML {
 			t.Fatalf("Expected no changes, but got different XML: %s", string(updatedContent))
+		}
+
+		if !strings.Contains(stdOut.String(), "No updates made to the configuration.") {
+			t.Fatalf("Expected log entry for no updates, got: %s", stdOut.String())
+		}
+	})
+
+	t.Run("Ignore missing config file", func(t *testing.T) {
+		// Ensure the file does not exist
+		nonExistentFile := "nonexistent.xml"
+
+		envVars := []string{
+			"CONFIGARR__LOG=LogLevel=debug",
+		}
+
+		// Prepare arguments to simulate command-line input
+		args := []string{"cmd", "--config", nonExistentFile, "--prefix", "CONFIGARR__", "--ignore-missing-config", "--debug"}
+
+		var stdOut strings.Builder
+		err := run(envVars, args, &stdOut)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if !strings.Contains(stdOut.String(), "No configuration file found. Skipping update.") {
+			t.Fatalf("Expected log entry for skipping update due to missing file, got: %s", stdOut.String())
+		}
+	})
+
+	t.Run("Error when config file is missing without ignore flag", func(t *testing.T) {
+		// Ensure the file does not exist
+		nonExistentFile := "nonexistent.xml"
+
+		envVars := []string{
+			"CONFIGARR__LOG=LogLevel=debug",
+		}
+
+		// Prepare arguments to simulate command-line input
+		args := []string{"cmd", "--config", nonExistentFile, "--prefix", "CONFIGARR__"}
+
+		var logOutput bytes.Buffer
+		err := run(envVars, args, &logOutput)
+		if err == nil {
+			t.Fatal("Expected error for missing configuration file, but got none")
 		}
 	})
 }

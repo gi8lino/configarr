@@ -11,8 +11,9 @@
 ### Flags
 
 - `--config`: Path to the XML configuration file (default: `/config/config.xml`).
+- `--ignore-missing-config`: Ignore missing configuration file when set to `true`. Otherwise, `configarr` will exit with an error.
 - `--prefix`: Prefix for environment variables (default: `CONFIGARR__`).
-- `--silent`: Suppress output when set to `true`.
+- `--debug`: Enable debug logging.
 
 ### initContainer
 
