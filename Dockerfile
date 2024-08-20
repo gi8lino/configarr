@@ -1,4 +1,4 @@
-FROM tinygo/tinygo:0.32.0 AS builder
+FROM tinygo/tinygo:0.33.0 AS builder
 
 WORKDIR /app
 
