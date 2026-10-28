@@ -21,7 +21,9 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
+      - name: Test
+        run: go test -race ./...
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          args: --issues-exit-code=0 --timeout=3m ./...
+          args: --timeout=3m ./...
