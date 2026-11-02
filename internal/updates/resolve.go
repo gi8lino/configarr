@@ -33,7 +33,11 @@ func Resolve(inputs Inputs) ([]xmlconfig.Update, error) {
 			return nil, err
 		}
 
-		result = append(result, xmlconfig.Update{ID: id, Path: inputs.Paths[id], Value: value})
+		result = append(result, xmlconfig.Update{
+			ID:    id,
+			Path:  inputs.Paths[id],
+			Value: value,
+		})
 	}
 
 	return result, nil

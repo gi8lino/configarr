@@ -1,18 +1,23 @@
 package cli
 
 import (
-	"os"
-	"strings"
 	"testing"
+
+	"configarr/internal/testutil"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseFlags(t *testing.T) {
-	setEnvironment(t, nil)
+func TestParse(t *testing.T) {
+	t.Parallel()
 
 	t.Run("valid flags", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, nil) {
+			return
+		}
 		args := []string{"--file", "/path/to/config.xml", "--ignore-missing-config"}
 
 		options, err := Parse(args)
@@ -24,109 +29,349 @@ func TestParseFlags(t *testing.T) {
 	})
 
 	t.Run("invalid flags", func(t *testing.T) {
-		_, err := Parse([]string{"--invalid"})
+		t.Parallel()
 
+		if !testutil.WithEnvironment(t, nil) {
+			return
+		}
+		_, err := Parse([]string{"--invalid"})
 		assert.Error(t, err)
 	})
-}
 
-func TestStaticEnvironmentBindings(t *testing.T) {
-	setEnvironment(t, []string{"CONFIGARR__FILE=from-env.xml", "CONFIGARR__IGNORE_MISSING_CONFIG=true"})
+	t.Run("environment defaults", func(t *testing.T) {
+		t.Parallel()
 
-	options, err := Parse(nil)
-	require.NoError(t, err)
-
-	assert.Equal(t, []string{"from-env.xml"}, options.FilePaths)
-	assert.True(t, options.IgnoreMissingConfig)
-
-	options, err = Parse([]string{"--file=from-cli.xml"})
-	require.NoError(t, err)
-
-	assert.Equal(t, []string{"from-cli.xml"}, options.FilePaths)
-}
-
-func TestParseKeepsValueSourceUnresolved(t *testing.T) {
-	setEnvironment(t, nil)
-	args := []string{"--file=unused.xml", "--update.a.path=/Root/Key", "--update.a.valueFromEnv=UNSET_SOURCE"}
-
-	options, err := Parse(args)
-	require.NoError(t, err)
-
-	assert.Equal(t, "UNSET_SOURCE", options.Updates.ValueFromEnv["a"])
-}
-
-func TestPrefixFlagRemoved(t *testing.T) {
-	setEnvironment(t, nil)
-
-	_, err := Parse([]string{"--file=unused.xml", "--prefix=OLD__"})
-
-	assert.Error(t, err)
-}
-
-func setEnvironment(t *testing.T, entries []string) {
-	t.Helper()
-
-	keys := map[string]bool{"TOKEN": true, "SECRET": true, "DATABASE_HOST": true}
-	for _, entry := range os.Environ() {
-		key, _, _ := strings.Cut(entry, "=")
-		if strings.HasPrefix(key, "CONFIGARR_") {
-			keys[key] = true
+		if !testutil.WithEnvironment(t, []string{"CONFIGARR__FILE=from-env.xml", "CONFIGARR__IGNORE_MISSING_CONFIG=true"}) {
+			return
 		}
-	}
-	for _, entry := range entries {
-		key, _, _ := strings.Cut(entry, "=")
-		keys[key] = true
-	}
 
-	for key := range keys {
-		t.Setenv(key, "")
-		require.NoError(t, os.Unsetenv(key))
-	}
-	for _, entry := range entries {
-		key, value, valid := strings.Cut(entry, "=")
-		if valid {
-			t.Setenv(key, value)
+		options, err := Parse(nil)
+		require.NoError(t, err)
+
+		assert.Equal(t, []string{"from-env.xml"}, options.FilePaths)
+		assert.True(t, options.IgnoreMissingConfig)
+	})
+
+	t.Run("flag overrides environment default", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, []string{"CONFIGARR__FILE=from-env.xml", "CONFIGARR__IGNORE_MISSING_CONFIG=true"}) {
+			return
 		}
-	}
-}
 
-func TestFileArguments(t *testing.T) {
-	tests := []struct {
-		name      string
-		args      []string
-		environ   []string
-		want      []string
-		wantError bool
-	}{
-		{name: "one positional file", args: []string{"radarr.xml"}, want: []string{"radarr.xml"}},
-		{name: "multiple positional files", args: []string{"radarr.xml", "sonarr.xml"}, want: []string{"radarr.xml", "sonarr.xml"}},
-		{name: "repeated file flag", args: []string{"--file=radarr.xml", "--file", "sonarr.xml"}, want: []string{"radarr.xml", "sonarr.xml"}},
-		{name: "combined forms", args: []string{"sonarr.xml", "--file=radarr.xml"}, want: []string{"radarr.xml", "sonarr.xml"}},
-		{name: "intermixed flags", args: []string{"radarr.xml", "--ignore-missing-config", "sonarr.xml"}, want: []string{"radarr.xml", "sonarr.xml"}},
-		{name: "literal filename", args: []string{"--file= radarr, sonarr.xml "}, want: []string{" radarr, sonarr.xml "}},
-		{name: "dash filename", args: []string{"--", "-radarr.xml"}, want: []string{"-radarr.xml"}},
-		{name: "environment fallback", environ: []string{"CONFIGARR__FILE=radarr.xml"}, want: []string{"radarr.xml"}},
-		{name: "flag overrides environment", args: []string{"--file=sonarr.xml"}, environ: []string{"CONFIGARR__FILE=radarr.xml"}, want: []string{"sonarr.xml"}},
-		{name: "positional overrides environment", args: []string{"sonarr.xml"}, environ: []string{"CONFIGARR__FILE=radarr.xml"}, want: []string{"sonarr.xml"}},
-		{name: "no files", wantError: true},
-		{name: "empty flag", args: []string{"--file="}, wantError: true},
-		{name: "empty positional file", args: []string{""}, wantError: true},
-		{name: "old flag rejected", args: []string{"--config=radarr.xml"}, wantError: true},
-		{name: "old environment ignored", environ: []string{"CONFIGARR__CONFIG=radarr.xml"}, wantError: true},
-	}
+		options, err := Parse([]string{"--file=from-cli.xml"})
+		require.NoError(t, err)
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			setEnvironment(t, test.environ)
+		assert.Equal(t, []string{"from-cli.xml"}, options.FilePaths)
+		assert.True(t, options.IgnoreMissingConfig)
+	})
 
-			options, err := Parse(test.args)
-			if test.wantError {
-				assert.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
+	t.Run("keeps environment value source unresolved", func(t *testing.T) {
+		t.Parallel()
 
-			assert.Equal(t, test.want, options.FilePaths)
-		})
-	}
+		if !testutil.WithEnvironment(t, nil) {
+			return
+		}
+		args := []string{"--file=unused.xml", "--update.a.path=/Root/Key", "--update.a.valueFromEnv=UNSET_SOURCE"}
+
+		options, err := Parse(args)
+		require.NoError(t, err)
+
+		assert.Equal(t, "UNSET_SOURCE", options.Updates.ValueFromEnv["a"])
+	})
+
+	t.Run("rejects removed prefix flag", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, nil) {
+			return
+		}
+
+		_, err := Parse([]string{"--file=unused.xml", "--prefix=OLD__"})
+		assert.Error(t, err)
+	})
+
+	t.Run("one positional file", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, nil) {
+			return
+		}
+
+		options, err := Parse([]string{"radarr.xml"})
+		require.NoError(t, err)
+
+		assert.Equal(t, []string{"radarr.xml"}, options.FilePaths)
+	})
+
+	t.Run("multiple positional files", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, nil) {
+			return
+		}
+
+		options, err := Parse([]string{"radarr.xml", "sonarr.xml"})
+		require.NoError(t, err)
+
+		assert.Equal(t, []string{"radarr.xml", "sonarr.xml"}, options.FilePaths)
+	})
+
+	t.Run("repeated file flag", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, nil) {
+			return
+		}
+
+		options, err := Parse([]string{"--file=radarr.xml", "--file", "sonarr.xml"})
+		require.NoError(t, err)
+
+		assert.Equal(t, []string{"radarr.xml", "sonarr.xml"}, options.FilePaths)
+	})
+
+	t.Run("combined forms", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, nil) {
+			return
+		}
+
+		options, err := Parse([]string{"sonarr.xml", "--file=radarr.xml"})
+		require.NoError(t, err)
+
+		assert.Equal(t, []string{"radarr.xml", "sonarr.xml"}, options.FilePaths)
+	})
+
+	t.Run("intermixed flags", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, nil) {
+			return
+		}
+
+		options, err := Parse([]string{"radarr.xml", "--ignore-missing-config", "sonarr.xml"})
+		require.NoError(t, err)
+
+		assert.Equal(t, []string{"radarr.xml", "sonarr.xml"}, options.FilePaths)
+	})
+
+	t.Run("literal filename", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, nil) {
+			return
+		}
+
+		options, err := Parse([]string{"--file= radarr, sonarr.xml "})
+		require.NoError(t, err)
+
+		assert.Equal(t, []string{" radarr, sonarr.xml "}, options.FilePaths)
+	})
+
+	t.Run("dash filename", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, nil) {
+			return
+		}
+
+		options, err := Parse([]string{"--", "-radarr.xml"})
+		require.NoError(t, err)
+
+		assert.Equal(t, []string{"-radarr.xml"}, options.FilePaths)
+	})
+
+	t.Run("environment fallback", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, []string{"CONFIGARR__FILE=radarr.xml"}) {
+			return
+		}
+
+		options, err := Parse(nil)
+		require.NoError(t, err)
+
+		assert.Equal(t, []string{"radarr.xml"}, options.FilePaths)
+	})
+
+	t.Run("flag overrides environment", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, []string{"CONFIGARR__FILE=radarr.xml"}) {
+			return
+		}
+
+		options, err := Parse([]string{"--file=sonarr.xml"})
+		require.NoError(t, err)
+
+		assert.Equal(t, []string{"sonarr.xml"}, options.FilePaths)
+	})
+
+	t.Run("positional overrides environment", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, []string{"CONFIGARR__FILE=radarr.xml"}) {
+			return
+		}
+
+		options, err := Parse([]string{"sonarr.xml"})
+		require.NoError(t, err)
+
+		assert.Equal(t, []string{"sonarr.xml"}, options.FilePaths)
+	})
+
+	t.Run("no files", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, nil) {
+			return
+		}
+
+		_, err := Parse(nil)
+		assert.Error(t, err)
+	})
+
+	t.Run("empty flag", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, nil) {
+			return
+		}
+
+		_, err := Parse([]string{"--file="})
+		assert.Error(t, err)
+	})
+
+	t.Run("empty positional file", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, nil) {
+			return
+		}
+
+		_, err := Parse([]string{""})
+		assert.Error(t, err)
+	})
+
+	t.Run("old flag rejected", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, nil) {
+			return
+		}
+
+		_, err := Parse([]string{"--config=radarr.xml"})
+		assert.Error(t, err)
+	})
+
+	t.Run("old environment ignored", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, []string{"CONFIGARR__CONFIG=radarr.xml"}) {
+			return
+		}
+
+		_, err := Parse(nil)
+		assert.Error(t, err)
+	})
+
+	t.Run("empty environment name", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, nil) {
+			return
+		}
+		args := []string{
+			"--file", "unused.xml",
+			"--update.a.path=/Root/Key",
+			"--update.a.valueFromEnv=",
+		}
+
+		_, err := Parse(args)
+		assert.Error(t, err)
+	})
+
+	t.Run("missing path", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, nil) {
+			return
+		}
+		args := []string{
+			"--file", "unused.xml",
+			"--update.a.value=hello",
+		}
+
+		_, err := Parse(args)
+		assert.Error(t, err)
+	})
+
+	t.Run("missing value", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, nil) {
+			return
+		}
+		args := []string{
+			"--file", "unused.xml",
+			"--update.a.path=/Root/Key",
+		}
+
+		_, err := Parse(args)
+		assert.Error(t, err)
+	})
+
+	t.Run("both sources", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, nil) {
+			return
+		}
+		args := []string{
+			"--file", "unused.xml",
+			"--update.a.path=/Root/Key",
+			"--update.a.value=hello",
+			"--update.a.valueFromEnv=TOKEN",
+		}
+
+		_, err := Parse(args)
+		assert.Error(t, err)
+	})
+
+	t.Run("empty environment field", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, []string{
+			"CONFIGARR__UPDATE_A_PATH=/Root/Key",
+			"CONFIGARR__UPDATE_A_VALUE=",
+		}) {
+			return
+		}
+		args := []string{
+			"--file", "unused.xml",
+		}
+
+		_, err := Parse(args)
+		assert.Error(t, err)
+	})
+
+	t.Run("mixed sources conflict", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, []string{
+			"CONFIGARR__UPDATE_A_PATH=/Root/Key",
+			"CONFIGARR__UPDATE_A_VALUEFROMENV=TOKEN",
+			"TOKEN=secret",
+		}) {
+			return
+		}
+		args := []string{
+			"--file", "unused.xml",
+			"--update.a.value=cli",
+		}
+
+		_, err := Parse(args)
+		assert.Error(t, err)
+	})
 }

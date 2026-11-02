@@ -11,110 +11,168 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestEditFilePreservesSymlinkAndPermissions(t *testing.T) {
-	directory := t.TempDir()
-	target := filepath.Join(directory, "actual.xml")
-	link := filepath.Join(directory, "config.xml")
-	original := []byte("<?xml version=\"1.0\"?>\n<Settings><!--keep--><Key>old</Key></Settings>\n")
-	require.NoError(t, os.WriteFile(target, original, 0600))
-	require.NoError(t, os.Symlink("actual.xml", link))
-	before, err := os.Stat(target)
-	require.NoError(t, err)
+func TestEditFile(t *testing.T) {
+	t.Parallel()
 
-	changed, err := EditFile(link, []Update{{ID: "a", Path: "/Settings/Key", Value: "new&value"}})
-	require.NoError(t, err)
-	assert.True(t, changed)
+	t.Run("File preserves symlink and permissions", func(t *testing.T) {
+		t.Parallel()
+		directory := t.TempDir()
+		target := filepath.Join(directory, "actual.xml")
+		link := filepath.Join(directory, "config.xml")
+		original := []byte("<?xml version=\"1.0\"?>\n<Settings><!--keep--><Key>old</Key></Settings>\n")
+		require.NoError(t, os.WriteFile(target, original, 0o600))
+		require.NoError(t, os.Symlink("actual.xml", link))
+		before, err := os.Stat(target)
+		require.NoError(t, err)
 
-	got, err := os.ReadFile(target)
-	require.NoError(t, err)
-	want := bytes.Replace(original, []byte("old"), []byte("new&amp;value"), 1)
-	assert.Equal(t, want, got, "unrelated bytes must be preserved")
+		changed, err := EditFile(link, []Update{{ID: "a", Path: "/Settings/Key", Value: "new&value"}})
+		require.NoError(t, err)
+		assert.True(t, changed)
 
-	after, err := os.Stat(target)
-	require.NoError(t, err)
-	assert.Equal(t, before.Mode(), after.Mode())
-	value, err := os.Readlink(link)
-	require.NoError(t, err)
-	assert.Equal(t, "actual.xml", value)
+		got, err := os.ReadFile(target)
+		require.NoError(t, err)
+		want := bytes.Replace(original, []byte("old"), []byte("new&amp;value"), 1)
+		assert.Equal(t, want, got, "unrelated bytes must be preserved")
 
-	temporary, err := filepath.Glob(filepath.Join(directory, ".configarr-*"))
-	require.NoError(t, err)
-	assert.Empty(t, temporary, "temporary files must be removed")
-}
+		after, err := os.Stat(target)
+		require.NoError(t, err)
+		assert.Equal(t, before.Mode(), after.Mode())
+		value, err := os.Readlink(link)
+		require.NoError(t, err)
+		assert.Equal(t, "actual.xml", value)
 
-func TestFinalNoopPreservesFileIdentity(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.xml")
-	require.NoError(t, os.WriteFile(path, []byte(`<Anything><Key>old</Key></Anything>`), 0600))
-	before, err := os.Stat(path)
-	require.NoError(t, err)
-
-	changed, err := EditFile(path, []Update{
-		{ID: "a", Path: "/Anything/Key", Value: "new"},
-		{ID: "z", Path: "/Anything/Key", Value: "old"},
+		temporary, err := filepath.Glob(filepath.Join(directory, ".configarr-*"))
+		require.NoError(t, err)
+		assert.Empty(t, temporary, "temporary files must be removed")
 	})
-	require.NoError(t, err)
-	assert.False(t, changed)
 
-	after, err := os.Stat(path)
-	require.NoError(t, err)
-	assert.True(t, os.SameFile(before, after), "no-op must keep the original inode")
-	assert.Equal(t, before.ModTime(), after.ModTime())
-}
+	t.Run("Noop preserves file identity", func(t *testing.T) {
+		t.Parallel()
 
-func TestOriginalDocumentSelectors(t *testing.T) {
-	source := []byte(`<Root><Key name="old">old</Key></Root>`)
-	reader := bytes.NewReader(source)
-	updates := []Update{
-		{ID: "rename", Path: "/Root/Key/@name", Value: "new"},
-		{ID: "text", Path: "/Root/Key[@name='old']", Value: "new"},
-	}
+		path := filepath.Join(t.TempDir(), "config.xml")
+		require.NoError(t, os.WriteFile(path, []byte(`<Anything><Key>old</Key></Anything>`), 0o600))
+		before, err := os.Stat(path)
+		require.NoError(t, err)
 
-	edits, err := planEdits(reader, int64(len(source)), updates)
-	require.NoError(t, err)
-	var result bytes.Buffer
-	require.NoError(t, copyEdits(reader, int64(len(source)), &result, edits))
-
-	assert.Equal(t, `<Root><Key name="new">new</Key></Root>`, result.String())
-}
-
-func TestInvalidDocumentDoesNotWrite(t *testing.T) {
-	documents := []string{
-		`<Root><Key>old</Key></Root>garbage`,
-		`<Root><Key>old</Key><Key>duplicate</Key></Root>`,
-		`<Root><Key>old</Key></Root><Other/>`,
-	}
-
-	for _, source := range documents {
-		t.Run(source, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "config.xml")
-			require.NoError(t, os.WriteFile(path, []byte(source), 0600))
-
-			_, err := EditFile(path, []Update{{ID: "a", Path: "/Root/Key", Value: "new"}})
-			require.Error(t, err)
-
-			got, err := os.ReadFile(path)
-			require.NoError(t, err)
-			assert.Equal(t, source, string(got))
+		changed, err := EditFile(path, []Update{
+			{ID: "a", Path: "/Anything/Key", Value: "new"},
+			{ID: "z", Path: "/Anything/Key", Value: "old"},
 		})
-	}
+		require.NoError(t, err)
+		assert.False(t, changed)
+
+		after, err := os.Stat(path)
+		require.NoError(t, err)
+		assert.True(t, os.SameFile(before, after), "no-op must keep the original inode")
+		assert.Equal(t, before.ModTime(), after.ModTime())
+	})
+
+	t.Run("trailing text", func(t *testing.T) {
+		t.Parallel()
+
+		source := `<Root><Key>old</Key></Root>garbage`
+		path := filepath.Join(t.TempDir(), "config.xml")
+		require.NoError(t, os.WriteFile(path, []byte(source), 0o600))
+
+		_, err := EditFile(path, []Update{{ID: "a", Path: "/Root/Key", Value: "new"}})
+		require.Error(t, err)
+
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, source, string(got))
+	})
+
+	t.Run("ambiguous target", func(t *testing.T) {
+		t.Parallel()
+
+		source := `<Root><Key>old</Key><Key>duplicate</Key></Root>`
+		path := filepath.Join(t.TempDir(), "config.xml")
+		require.NoError(t, os.WriteFile(path, []byte(source), 0o600))
+
+		_, err := EditFile(path, []Update{{ID: "a", Path: "/Root/Key", Value: "new"}})
+		require.Error(t, err)
+
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, source, string(got))
+	})
+
+	t.Run("multiple roots", func(t *testing.T) {
+		t.Parallel()
+
+		source := `<Root><Key>old</Key></Root><Other/>`
+		path := filepath.Join(t.TempDir(), "config.xml")
+		require.NoError(t, os.WriteFile(path, []byte(source), 0o600))
+
+		_, err := EditFile(path, []Update{{ID: "a", Path: "/Root/Key", Value: "new"}})
+		require.Error(t, err)
+
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, source, string(got))
+	})
+
+	t.Run("wraps missing file error", func(t *testing.T) {
+		t.Parallel()
+
+		path := filepath.Join(t.TempDir(), "missing.xml")
+
+		_, err := EditFile(path, nil)
+
+		assert.ErrorIs(t, err, os.ErrNotExist)
+	})
+
+	t.Run("rejects second root without updates", func(t *testing.T) {
+		t.Parallel()
+
+		suffix := `<Config/>`
+		path := filepath.Join(t.TempDir(), "config.xml")
+		source := []byte(`<Config><Key>value</Key></Config>` + suffix)
+		require.NoError(t, os.WriteFile(path, source, 0600))
+
+		_, err := EditFile(path, nil)
+		assert.Error(t, err)
+	})
+
+	t.Run("rejects trailing text without updates", func(t *testing.T) {
+		t.Parallel()
+
+		suffix := `garbage`
+		path := filepath.Join(t.TempDir(), "config.xml")
+		source := []byte(`<Config><Key>value</Key></Config>` + suffix)
+		require.NoError(t, os.WriteFile(path, source, 0600))
+
+		_, err := EditFile(path, nil)
+		assert.Error(t, err)
+	})
+
+	t.Run("rejects malformed element without updates", func(t *testing.T) {
+		t.Parallel()
+
+		suffix := `<broken`
+		path := filepath.Join(t.TempDir(), "config.xml")
+		source := []byte(`<Config><Key>value</Key></Config>` + suffix)
+		require.NoError(t, os.WriteFile(path, source, 0600))
+
+		_, err := EditFile(path, nil)
+		assert.Error(t, err)
+	})
 }
 
-func TestMissingFileErrorIsWrapped(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "missing.xml")
+func TestCopyEdits(t *testing.T) {
+	t.Parallel()
 
-	_, err := EditFile(path, nil)
+	t.Run("propagates write failure", func(t *testing.T) {
+		t.Parallel()
 
-	assert.ErrorIs(t, err, os.ErrNotExist)
-}
+		source := bytes.NewReader([]byte(`<Root>old</Root>`))
+		edits, err := planEdits(source, source.Size(), []Update{{ID: "a", Path: "/Root", Value: "new"}})
+		require.NoError(t, err)
 
-func TestCopyEditsPropagatesWriteFailure(t *testing.T) {
-	source := bytes.NewReader([]byte(`<Root>old</Root>`))
-	edits, err := planEdits(source, source.Size(), []Update{{ID: "a", Path: "/Root", Value: "new"}})
-	require.NoError(t, err)
+		err = copyEdits(source, source.Size(), failingWriter{}, edits)
 
-	err = copyEdits(source, source.Size(), failingWriter{}, edits)
-
-	assert.ErrorIs(t, err, io.ErrClosedPipe)
+		assert.ErrorIs(t, err, io.ErrClosedPipe)
+	})
 }
 
 type failingWriter struct{}

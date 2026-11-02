@@ -86,7 +86,11 @@ type scanFrame struct {
 }
 
 // planEdits scans and validates XML while retaining only open elements and selected edits.
-func planEdits(source io.ReaderAt, size int64, updates []Update) ([]replacement, error) {
+func planEdits(
+	source io.ReaderAt,
+	size int64,
+	updates []Update,
+) ([]replacement, error) {
 	selections, indexedNames, err := compileSelections(updates)
 	if err != nil {
 		return nil, err
@@ -176,7 +180,14 @@ func compileSelections(updates []Update) ([]selection, map[string]bool, error) {
 		if err := xml.EscapeText(&escaped, []byte(update.Value)); err != nil {
 			return nil, nil, err
 		}
-		selections = append(selections, selection{update: update, steps: steps, attribute: attribute, escaped: escaped.Bytes()})
+		selections = append(
+			selections,
+			selection{
+				update:    update,
+				steps:     steps,
+				attribute: attribute,
+				escaped:   escaped.Bytes(),
+			})
 		for _, step := range steps {
 			if step.index > 0 {
 				indexed[step.name] = true
@@ -188,7 +199,15 @@ func compileSelections(updates []Update) ([]selection, map[string]bool, error) {
 }
 
 // startFrame matches an opening element and records attribute replacements.
-func startFrame(source io.ReaderAt, opening byteRange, token xml.StartElement, stack []*scanFrame, selections []selection, indexed map[string]bool, edits map[byteRange]replacement) (*scanFrame, error) {
+func startFrame(
+	source io.ReaderAt,
+	opening byteRange,
+	token xml.StartElement,
+	stack []*scanFrame,
+	selections []selection,
+	indexed map[string]bool,
+	edits map[byteRange]replacement,
+) (*scanFrame, error) {
 	if !uniqueAttributes(token.Attr) {
 		return nil, fmt.Errorf("XML element has duplicate attributes")
 	}
@@ -252,7 +271,11 @@ func startFrame(source io.ReaderAt, opening byteRange, token xml.StartElement, s
 }
 
 // selectAttribute records the final value for an existing selected attribute.
-func selectAttribute(attributes []documentAttribute, selection *selection, edits map[byteRange]replacement) error {
+func selectAttribute(
+	attributes []documentAttribute,
+	selection *selection,
+	edits map[byteRange]replacement,
+) error {
 	for _, attribute := range attributes {
 		if attribute.name != selection.attribute {
 			continue
@@ -268,7 +291,12 @@ func selectAttribute(attributes []documentAttribute, selection *selection, edits
 }
 
 // compareText compares decoded chunks without retaining the selected property's full value.
-func compareText(frame *scanFrame, selections []selection, text []byte, region byteRange) {
+func compareText(
+	frame *scanFrame,
+	selections []selection,
+	text []byte,
+	region byteRange,
+) {
 	if frame.textSelection < 0 {
 		return
 	}
@@ -284,7 +312,11 @@ func compareText(frame *scanFrame, selections []selection, text []byte, region b
 }
 
 // finishFrame records text edits only for the final update targeting a selected leaf.
-func finishFrame(frame *scanFrame, selections []selection, edits map[byteRange]replacement) error {
+func finishFrame(
+	frame *scanFrame,
+	selections []selection,
+	edits map[byteRange]replacement,
+) error {
 	if frame.textSelection < 0 {
 		return nil
 	}
