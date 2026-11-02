@@ -1,2 +1,6 @@
 .projectatlas
-configarr
+/configarr
+/bin/*
+!/bin/dev-tools.mk
+
+/coverage.out
