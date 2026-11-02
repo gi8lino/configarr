@@ -61,13 +61,9 @@ configarr --file=/radarr/config.xml --file=/sonarr/config.xml \
   --update.browser.value=False
 ```
 
-You can combine both forms; files listed with `--file` are processed first. A filename
-containing spaces should be quoted. Use `--` before positional filenames beginning
-with a dash.
+You can combine both forms; files listed with `--file` are processed first. A filename containing spaces should be quoted. Use `--` before positional filenames beginning with a dash.
 
-Files are updated one at a time. If a file fails, ConfigArr stops; files already
-updated keep their changes. `--ignore-missing-config` skips missing files and
-continues with the others.
+Files are updated one at a time. If a file fails, ConfigArr stops; files already updated keep their changes. `--ignore-missing-config` skips missing files and continues with the others.
 
 ## Use an environment variable
 
@@ -137,9 +133,7 @@ Add `--show-values` to include the old and new values:
 /config/config.xml: /Config/LogLevel: "info" -> "debug"
 ```
 
-This can expose passwords or API keys, including values supplied through environment
-variables. Quotes and line breaks inside values are escaped to keep each change on
-one line. Settings that already have the requested value are omitted.
+This can expose passwords or API keys, including values supplied through environment variables. Quotes and line breaks inside values are escaped to keep each change on one line. Settings that already have the requested value are omitted.
 
 For scripts, use `--output=json`. It writes one JSON object per line:
 
@@ -151,11 +145,7 @@ For scripts, use `--output=json`. It writes one JSON object per line:
 }
 ```
 
-Combine it with `--show-values` to include `before` and `after` fields. Files with no
-changes get an `unchanged` record; missing files skipped with
-`--ignore-missing-config` get a `skipped` record. JSON records go to standard output;
-errors go to standard error. If a later file fails, records for earlier completed
-files are still printed.
+Combine it with `--show-values` to include `before` and `after` fields. Files with no changes get an `unchanged` record; missing files skipped with `--ignore-missing-config` get a `skipped` record. JSON records go to standard output; errors go to standard error. If a later file fails, records for earlier completed files are still printed.
 
 ## Options
 
@@ -167,8 +157,7 @@ files are still printed.
 | `--show-values`           | Include old and new values in reports. May expose secrets.                |
 | `--help`                  | Show all available options.                                               |
 
-Supply at least one file. `CONFIGARR__FILE` can provide a filename when none is
-passed on the command line. Command-line files take priority over this variable.
+Supply at least one file. `CONFIGARR__FILE` can provide a filename when none is passed on the command line. Command-line files take priority over this variable.
 
 ## License
 
