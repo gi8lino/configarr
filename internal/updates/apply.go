@@ -12,8 +12,8 @@ import (
 type Result struct {
 	// FilePath identifies the input file.
 	FilePath string
-	// Changed reports whether the file was updated.
-	Changed bool
+	// Changes lists effective updates in document order.
+	Changes []xmlconfig.Change
 	// SkippedMissing reports a missing file skipped by the caller's policy.
 	SkippedMissing bool
 }
@@ -23,7 +23,7 @@ func Apply(files []string, replacements []xmlconfig.Update, ignoreMissing bool) 
 	var results []Result
 
 	for _, file := range files {
-		changed, err := xmlconfig.EditFile(file, replacements)
+		changes, err := xmlconfig.EditFile(file, replacements)
 		if err != nil {
 			if ignoreMissing && errors.Is(err, os.ErrNotExist) {
 				results = append(
@@ -41,7 +41,7 @@ func Apply(files []string, replacements []xmlconfig.Update, ignoreMissing bool) 
 			results,
 			Result{
 				FilePath: file,
-				Changed:  changed,
+				Changes:  changes,
 			},
 		)
 	}

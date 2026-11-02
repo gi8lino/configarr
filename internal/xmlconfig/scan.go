@@ -21,6 +21,16 @@ type Update struct {
 	Value string
 }
 
+// Change describes one effective update using decoded XML values.
+type Change struct {
+	// Path identifies the selector of the final update for this target.
+	Path string
+	// Before contains the original decoded value.
+	Before string
+	// After contains the final replacement value.
+	After string
+}
+
 // byteRange locates a half-open region of the original XML file.
 type byteRange struct {
 	// start is the first byte included in the region.
@@ -43,6 +53,8 @@ type documentAttribute struct {
 type replacement struct {
 	// region locates the bytes replaced by this edit.
 	region byteRange
+	// change describes the logical update on its first replacement span.
+	change *Change
 	// value contains the replacement bytes.
 	value []byte
 }
@@ -77,6 +89,8 @@ type scanFrame struct {
 	textSelection int
 	// textRanges locates text chunks of a selected leaf, preserving intervening comments.
 	textRanges []byteRange
+	// original collects decoded text for the change report.
+	original strings.Builder
 	// textPosition counts decoded text bytes compared with the replacement value.
 	textPosition int
 	// equal reports whether decoded text has matched the replacement so far.
@@ -282,7 +296,15 @@ func selectAttribute(
 		}
 		delete(edits, attribute.region)
 		if attribute.value != selection.update.Value {
-			edits[attribute.region] = replacement{region: attribute.region, value: selection.escaped}
+			edits[attribute.region] = replacement{
+				region: attribute.region,
+				value:  selection.escaped,
+				change: &Change{
+					Path:   selection.update.Path,
+					Before: attribute.value,
+					After:  selection.update.Value,
+				},
+			}
 		}
 		return nil
 	}
@@ -290,7 +312,7 @@ func selectAttribute(
 	return fmt.Errorf("update %s: attribute does not exist", selection.update.ID)
 }
 
-// compareText compares decoded chunks without retaining the selected property's full value.
+// compareText compares and collects decoded chunks of a selected property.
 func compareText(
 	frame *scanFrame,
 	selections []selection,
@@ -301,6 +323,7 @@ func compareText(
 		return
 	}
 
+	frame.original.Write(text)
 	value := selections[frame.textSelection].update.Value
 	next := frame.textPosition + len(text)
 	if !textChunkMatches(value, frame.textPosition, text) {
@@ -329,14 +352,27 @@ func finishFrame(
 		return nil
 	}
 
+	change := &Change{Path: selection.update.Path, Before: frame.original.String(), After: selection.update.Value}
+
 	if frame.selfClosing {
 		region := byteRange{frame.opening.end - 2, frame.opening.end}
-		edits[region] = replacement{region: region, value: []byte(">" + string(selection.escaped) + "</" + frame.name + ">")}
+		edits[region] = replacement{
+			region: region,
+			value:  []byte(">" + string(selection.escaped) + "</" + frame.name + ">"),
+			change: change,
+		}
 		return nil
 	}
 	if len(frame.textRanges) == 0 {
-		region := byteRange{frame.opening.end, frame.opening.end}
-		edits[region] = replacement{region: region, value: selection.escaped}
+		region := byteRange{
+			start: frame.opening.end,
+			end:   frame.opening.end,
+		}
+		edits[region] = replacement{
+			region: region,
+			value:  selection.escaped,
+			change: change,
+		}
 		return nil
 	}
 
@@ -345,7 +381,14 @@ func finishFrame(
 		if index == 0 {
 			value = selection.escaped
 		}
-		edits[region] = replacement{region: region, value: value}
+		edit := replacement{
+			region: region,
+			value:  value,
+		}
+		if index == 0 {
+			edit.change = change
+		}
+		edits[region] = edit
 	}
 	return nil
 }

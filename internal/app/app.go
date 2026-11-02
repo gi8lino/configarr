@@ -1,10 +1,12 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
 	"configarr/internal/cli"
+	"configarr/internal/report"
 	"configarr/internal/updates"
 
 	"github.com/containeroo/tinyflags"
@@ -30,16 +32,8 @@ func Run(args []string, stdout, stderr io.Writer) error {
 	}
 
 	results, err := updates.Apply(options.FilePaths, replacements, options.IgnoreMissingConfig)
-	for _, result := range results {
-		switch {
-		case result.SkippedMissing:
-			fmt.Fprintln(stderr, result.FilePath+": no configuration file found. Skipping update.") // nolint:errcheck
-		case result.Changed:
-			fmt.Fprintln(stdout, result.FilePath+": updated XML configuration", "updates", len(replacements)) // nolint:errcheck
-		default:
-			fmt.Fprintln(stdout, result.FilePath+": no updates made to the configuration.") // nolint:errcheck
-		}
-	}
+	reportErr := report.Write(stdout, stderr, results, options.Output, options.ShowValues)
+	err = errors.Join(err, reportErr)
 
 	if err != nil {
 		fmt.Fprintln(stderr, err) // nolint:errcheck

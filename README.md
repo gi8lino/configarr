@@ -121,12 +121,50 @@ Paths follow the names in your XML, including uppercase and lowercase letters:
 
 A path must point to exactly one existing setting. ConfigArr does not add or delete settings. If a path is missing, matches more than one setting, or the XML is invalid, the command fails and leaves the file unchanged.
 
+## See what changed
+
+Each changed setting gets one line. Values stay hidden by default:
+
+```text
+/config/config.xml: /Config/LaunchBrowser: updated
+/config/config.xml: /Config/LogLevel: updated
+```
+
+Add `--show-values` to include the old and new values:
+
+```text
+/config/config.xml: /Config/LaunchBrowser: "True" -> "False"
+/config/config.xml: /Config/LogLevel: "info" -> "debug"
+```
+
+This can expose passwords or API keys, including values supplied through environment
+variables. Quotes and line breaks inside values are escaped to keep each change on
+one line. Settings that already have the requested value are omitted.
+
+For scripts, use `--output=json`. It writes one JSON object per line:
+
+```json
+{
+  "file": "/config/config.xml",
+  "status": "updated",
+  "path": "/Config/LogLevel"
+}
+```
+
+Combine it with `--show-values` to include `before` and `after` fields. Files with no
+changes get an `unchanged` record; missing files skipped with
+`--ignore-missing-config` get a `skipped` record. JSON records go to standard output;
+errors go to standard error. If a later file fails, records for earlier completed
+files are still printed.
+
 ## Options
 
 | Option                    | What it does                                                              |
 | ------------------------- | ------------------------------------------------------------------------- |
 | `--file`                  | XML file to update. Can be repeated, or replaced by positional filenames. |
 | `--ignore-missing-config` | Skip missing files and continue with the others.                          |
+| `--output=text\|json`     | Choose readable text or one JSON record per line.                         |
+| `--show-values`           | Include old and new values in reports. May expose secrets.                |
 | `--help`                  | Show all available options.                                               |
 
 Supply at least one file. `CONFIGARR__FILE` can provide a filename when none is

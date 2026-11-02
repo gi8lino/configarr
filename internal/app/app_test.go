@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,6 +15,32 @@ import (
 
 func TestRun(t *testing.T) {
 	t.Parallel()
+
+	t.Run("reports completed changes as JSON before a later file failure", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, nil) {
+			return
+		}
+		directory := t.TempDir()
+		first := filepath.Join(directory, "first.xml")
+		missing := filepath.Join(directory, "missing.xml")
+		require.NoError(t, os.WriteFile(first, []byte(`<Root><Key>old</Key></Root>`), 0o600))
+
+		var stdout, stderr bytes.Buffer
+		err := Run([]string{first, missing, "--output=json", "--show-values", "--update.a.path=/Root/Key", "--update.a.value=new"}, &stdout, &stderr)
+		require.ErrorIs(t, err, os.ErrNotExist)
+
+		var entry map[string]string
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &entry))
+		assert.Equal(t, map[string]string{
+			"file": first, "status": "updated", "path": "/Root/Key", "before": "old", "after": "new",
+		}, entry)
+		assert.Contains(t, stderr.String(), missing)
+		content, err := os.ReadFile(first)
+		require.NoError(t, err)
+		assert.Equal(t, `<Root><Key>new</Key></Root>`, string(content))
+	})
 
 	t.Run("updates XML and preserves permissions", func(t *testing.T) {
 		t.Parallel()

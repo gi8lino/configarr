@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 
+	"configarr/internal/report"
 	"configarr/internal/updates"
 	"github.com/containeroo/tinyflags"
 )
@@ -14,6 +15,10 @@ type Options struct {
 	FilePaths []string
 	// IgnoreMissingConfig allows a missing file to be skipped.
 	IgnoreMissingConfig bool
+	// Output selects text or newline-delimited JSON reports.
+	Output report.Format
+	// ShowValues includes original and replacement values in reports.
+	ShowValues bool
 	// Updates retains raw dynamic fields for the update resolver.
 	Updates updates.Inputs
 }
@@ -30,6 +35,9 @@ func Parse(args []string) (Options, error) {
 		PreserveSpace().
 		Value()
 	flagSet.BoolVar(&options.IgnoreMissingConfig, "ignore-missing-config", false, "Ignore missing configuration file")
+
+	tinyflags.EnumVar(flagSet, &options.Output, "output", report.Text, "Report format: text or json", report.Text, report.JSON)
+	flagSet.BoolVar(&options.ShowValues, "show-values", false, "Include before/after values in reports (may expose secrets)")
 
 	group := flagSet.DynamicGroup("update")
 	paths := group.String("path", "", "Absolute XML element or attribute path")

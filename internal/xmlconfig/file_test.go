@@ -14,6 +14,30 @@ import (
 func TestEditFile(t *testing.T) {
 	t.Parallel()
 
+	t.Run("reports decoded final changes once per target", func(t *testing.T) {
+		t.Parallel()
+
+		path := filepath.Join(t.TempDir(), "config.xml")
+		source := `<Root key="a&amp;b"><Key><![CDATA[old]]><!--keep-->&amp;text</Key><Same>same</Same></Root>`
+		require.NoError(t, os.WriteFile(path, []byte(source), 0o600))
+
+		changes, err := EditFile(path, []Update{
+			{ID: "attribute", Path: "/Root/@key", Value: ""},
+			{ID: "first", Path: "/Root/Key", Value: "intermediate"},
+			{ID: "final", Path: "/Root/Key", Value: "new"},
+			{ID: "same", Path: "/Root/Same", Value: "same"},
+		})
+		require.NoError(t, err)
+
+		assert.Equal(t, []Change{
+			{Path: "/Root/@key", Before: "a&b", After: ""},
+			{Path: "/Root/Key", Before: "old&text", After: "new"},
+		}, changes)
+		content, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, `<Root key=""><Key>new<!--keep--></Key><Same>same</Same></Root>`, string(content))
+	})
+
 	t.Run("File preserves symlink and permissions", func(t *testing.T) {
 		t.Parallel()
 		directory := t.TempDir()
@@ -25,9 +49,9 @@ func TestEditFile(t *testing.T) {
 		before, err := os.Stat(target)
 		require.NoError(t, err)
 
-		changed, err := EditFile(link, []Update{{ID: "a", Path: "/Settings/Key", Value: "new&value"}})
+		changes, err := EditFile(link, []Update{{ID: "a", Path: "/Settings/Key", Value: "new&value"}})
 		require.NoError(t, err)
-		assert.True(t, changed)
+		assert.NotEmpty(t, changes)
 
 		got, err := os.ReadFile(target)
 		require.NoError(t, err)
@@ -54,12 +78,12 @@ func TestEditFile(t *testing.T) {
 		before, err := os.Stat(path)
 		require.NoError(t, err)
 
-		changed, err := EditFile(path, []Update{
+		changes, err := EditFile(path, []Update{
 			{ID: "a", Path: "/Anything/Key", Value: "new"},
 			{ID: "z", Path: "/Anything/Key", Value: "old"},
 		})
 		require.NoError(t, err)
-		assert.False(t, changed)
+		assert.Empty(t, changes)
 
 		after, err := os.Stat(path)
 		require.NoError(t, err)

@@ -30,7 +30,7 @@ func TestApply(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Equal(t, []updates.Result{
-			{FilePath: changed, Changed: true},
+			{FilePath: changed, Changes: []xmlconfig.Change{{Path: "/Root/Key", Before: "old", After: "new"}}},
 			{FilePath: unchanged},
 			{FilePath: missing, SkippedMissing: true},
 		}, results)
@@ -53,7 +53,7 @@ func TestApply(t *testing.T) {
 		require.ErrorIs(t, err, os.ErrNotExist)
 
 		assert.Contains(t, err.Error(), missing)
-		assert.Equal(t, []updates.Result{{FilePath: first, Changed: true}}, results)
+		assert.Equal(t, []updates.Result{{FilePath: first, Changes: []xmlconfig.Change{{Path: "/Root/Key", Before: "old", After: "new"}}}}, results)
 		content, err := os.ReadFile(last)
 		require.NoError(t, err)
 		assert.Equal(t, original, content)

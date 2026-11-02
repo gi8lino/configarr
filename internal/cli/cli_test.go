@@ -3,6 +3,7 @@ package cli
 import (
 	"testing"
 
+	"configarr/internal/report"
 	"configarr/internal/testutil"
 
 	"github.com/stretchr/testify/assert"
@@ -11,6 +12,28 @@ import (
 
 func TestParse(t *testing.T) {
 	t.Parallel()
+
+	t.Run("parses output settings", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, nil) {
+			return
+		}
+		options, err := Parse([]string{"config.xml", "--output=json", "--show-values"})
+		require.NoError(t, err)
+		assert.Equal(t, report.JSON, options.Output)
+		assert.True(t, options.ShowValues)
+	})
+
+	t.Run("rejects unsupported output format", func(t *testing.T) {
+		t.Parallel()
+
+		if !testutil.WithEnvironment(t, nil) {
+			return
+		}
+		_, err := Parse([]string{"config.xml", "--output=yaml"})
+		assert.Error(t, err)
+	})
 
 	t.Run("valid flags", func(t *testing.T) {
 		t.Parallel()

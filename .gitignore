@@ -4,3 +4,5 @@
 !/bin/dev-tools.mk
 
 /coverage.out
+
+config.xml
