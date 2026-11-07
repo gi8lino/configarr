@@ -3,7 +3,7 @@ module configarr
 go 1.27.0
 
 require (
-	github.com/containeroo/tinyflags v0.6.0
+	github.com/containeroo/tinyflags v0.8.0
 	github.com/stretchr/testify v1.12.1
 )
 
