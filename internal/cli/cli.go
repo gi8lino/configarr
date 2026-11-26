@@ -9,8 +9,8 @@ import (
 	"github.com/containeroo/tinyflags"
 )
 
-// Options contains application settings and parsed update fields.
-type Options struct {
+// Flags contains application settings and parsed update fields.
+type Flags struct {
 	// FilePaths lists the XML files that receive the same updates.
 	FilePaths []string
 	// IgnoreMissingConfig allows a missing file to be skipped.
@@ -24,20 +24,19 @@ type Options struct {
 }
 
 // Parse delegates flag and environment parsing to tinyflags without resolving replacement values.
-func Parse(args []string) (Options, error) {
+func Parse(args []string) (flags Flags, err error) {
 	flagSet := tinyflags.NewFlagSet("configarr", tinyflags.ContinueOnError)
 	flagSet.EnvPrefix("CONFIGARR_")
 	flagSet.Note("Pass XML filenames as positional arguments or repeat --file. Use -- before filenames that begin with a dash.")
 
-	options := Options{}
 	files := flagSet.StringSlice("file", nil, "XML file to update; may be repeated").
 		NoSplit().
 		PreserveSpace().
 		Value()
-	flagSet.BoolVar(&options.IgnoreMissingConfig, "ignore-missing-config", false, "Ignore missing configuration file")
+	flagSet.BoolVar(&flags.IgnoreMissingConfig, "ignore-missing-config", false, "Ignore missing configuration file")
 
-	tinyflags.EnumVar(flagSet, &options.Output, "output", report.Text, "Report format: text or json", report.Text, report.JSON)
-	flagSet.BoolVar(&options.ShowValues, "show-values", false, "Include before/after values in reports (may expose secrets)")
+	tinyflags.EnumVar(flagSet, &flags.Output, "output", report.Text, "Report format: text or json", report.Text, report.JSON)
+	flagSet.BoolVar(&flags.ShowValues, "show-values", false, "Include before/after values in reports (may expose secrets)")
 
 	group := flagSet.DynamicGroup("update")
 	paths := group.String("path", "", "Absolute XML element or attribute path")
@@ -50,11 +49,11 @@ func Parse(args []string) (Options, error) {
 	group.OneOf(values, envNames).Required()
 
 	flagSet.Validate(func() error {
-		options.FilePaths = selectFilePaths(*files, flagSet.Args(), flagSet.Origin("file").Source)
-		if len(options.FilePaths) == 0 {
+		flags.FilePaths = selectFilePaths(*files, flagSet.Args(), flagSet.Origin("file").Source)
+		if len(flags.FilePaths) == 0 {
 			return fmt.Errorf("provide at least one XML file as a positional argument or with --file")
 		}
-		if slices.Contains(options.FilePaths, "") {
+		if slices.Contains(flags.FilePaths, "") {
 			return fmt.Errorf("XML file paths must not be empty")
 		}
 
@@ -62,16 +61,16 @@ func Parse(args []string) (Options, error) {
 	})
 
 	if err := flagSet.Parse(args); err != nil {
-		return Options{}, err
+		return Flags{}, err
 	}
 
-	options.Updates = updates.Inputs{
+	flags.Updates = updates.Inputs{
 		Paths:        paths.Values(),
 		Values:       values.Values(),
 		ValueFromEnv: envNames.Values(),
 	}
 
-	return options, nil
+	return flags, nil
 }
 
 // selectFilePaths combines explicit file arguments and uses the environment only as a fallback.
